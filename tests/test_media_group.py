@@ -48,6 +48,31 @@ def _setup_db(tmp_path):
     return conn
 
 
+def _url_entity(offset: int, length: int):
+    ent = MagicMock()
+    ent.type = "url"
+    ent.offset = offset
+    ent.length = length
+    ent.url = None
+    return ent
+
+
+def test_merged_entity_urls_offsets_are_utf16():
+    """The album path shares the single-message UTF-16 hazard: Telegram
+    offsets/lengths count UTF-16 code units, so an emoji in the caption
+    before a `type=url` entity must not corrupt the extracted URL."""
+    url = "https://example.com/x"
+    caption = f"🔥 {url}"  # emoji = two UTF-16 code units, one Python char
+    offset = len("🔥 ".encode("utf-16-le")) // 2
+    length = len(url.encode("utf-16-le")) // 2
+    msg = MagicMock()
+    msg.text = None
+    msg.entities = None
+    msg.caption = caption
+    msg.caption_entities = [_url_entity(offset, length)]
+    assert media_group._merged_entity_urls([msg]) == [url]
+
+
 @pytest.mark.asyncio
 async def test_buffer_accumulates_messages_with_same_mgid():
     """Two messages with the same media_group_id land in the same bucket."""

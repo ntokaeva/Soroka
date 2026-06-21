@@ -67,6 +67,14 @@ def _merged_caption(msgs):
     return "\n\n".join(captions)
 
 
+def _slice_utf16(text: str, offset: int, length: int) -> str:
+    """Telegram entity offset/length are UTF-16 code units, not Python
+    characters. Slice on the UTF-16 representation so emoji and other
+    non-BMP characters before the entity don't shift the result."""
+    units = text.encode("utf-16-le")
+    return units[offset * 2:(offset + length) * 2].decode("utf-16-le")
+
+
 def _merged_entity_urls(msgs) -> list[str]:
     """Walk every message in the album and pull URLs from its caption_entities
     (and text/entities for the rare case of a non-photo first message).
@@ -83,7 +91,7 @@ def _merged_entity_urls(msgs) -> list[str]:
             for ent in entities:
                 url = getattr(ent, "url", None)
                 if not url and ent.type == "url" and text is not None:
-                    url = text[ent.offset:ent.offset + ent.length]
+                    url = _slice_utf16(text, ent.offset, ent.length)
                 if url and url not in seen:
                     seen.add(url)
                     out.append(url)

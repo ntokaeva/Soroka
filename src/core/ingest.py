@@ -51,7 +51,8 @@ async def _save_or_update_note(conn: sqlite3.Connection, *, jina,
                     conn, existing_id,
                     kind=note.kind, title=note.title, content=note.content,
                     source_url=note.source_url, raw_caption=note.raw_caption,
-                    ru_summary=note.ru_summary, commit=False,
+                    ru_summary=note.ru_summary,
+                    extracted_urls=note.extracted_urls, commit=False,
                 )
                 if embed_text.strip():
                     embedding = await jina.embed(embed_text[:8000], role="passage")
@@ -219,6 +220,7 @@ async def ingest_voice(conn: sqlite3.Connection, *, deepgram, jina,
                         owner_id: int, tg_chat_id: int, tg_message_id: int,
                         audio_bytes: bytes, mime: str,
                         caption: Optional[str], created_at: int,
+                        extracted_urls: Optional[list[str]] = None,
                         is_edit: bool = False) -> Optional[int]:
     transcript = await deepgram.transcribe(audio_bytes, mime=mime)
     if not transcript.strip():
@@ -228,6 +230,7 @@ async def ingest_voice(conn: sqlite3.Connection, *, deepgram, jina,
         owner_id=owner_id, tg_message_id=tg_message_id, tg_chat_id=tg_chat_id,
         kind="voice", title=_make_title(transcript), content=transcript.strip(),
         raw_caption=caption, created_at=created_at,
+        extracted_urls=extracted_urls,
         # Voice transcripts are never thin: a successful STT result is
         # genuine content even when it's a curt "да" or "через час".
         # thin_content stays as the marker for "extractor produced

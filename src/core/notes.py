@@ -116,7 +116,8 @@ _UNSET = object()
 def update_note_content(conn: sqlite3.Connection, note_id: int, *,
                          kind: str, title: Optional[str], content: str,
                          source_url: Optional[str], raw_caption: Optional[str],
-                         ru_summary=_UNSET, commit: bool = True) -> None:
+                         ru_summary=_UNSET, extracted_urls=_UNSET,
+                         commit: bool = True) -> None:
     """Overwrite a note's mutable fields. The notes_au trigger refreshes
     FTS automatically; the caller is responsible for re-embedding via
     upsert_embedding.
@@ -128,22 +129,25 @@ def update_note_content(conn: sqlite3.Connection, note_id: int, *,
     Pass ``commit=False`` when the caller bundles this update with a
     follow-up embedding call inside one transaction; the caller is then
     responsible for the commit/rollback boundary.
+
+    ``extracted_urls`` follows the same sentinel rule: omit it to leave
+    the column untouched, or pass a list/``None`` to overwrite (stored as
+    a JSON array, NULL for ``None``).
     """
-    if ru_summary is _UNSET:
-        conn.execute(
-            """UPDATE notes
-               SET kind = ?, title = ?, content = ?, source_url = ?, raw_caption = ?
-               WHERE id = ?""",
-            (kind, title, content, source_url, raw_caption, note_id),
-        )
-    else:
-        conn.execute(
-            """UPDATE notes
-               SET kind = ?, title = ?, content = ?, source_url = ?,
-                   raw_caption = ?, ru_summary = ?
-               WHERE id = ?""",
-            (kind, title, content, source_url, raw_caption, ru_summary, note_id),
-        )
+    set_cols = ["kind = ?", "title = ?", "content = ?",
+                "source_url = ?", "raw_caption = ?"]
+    params = [kind, title, content, source_url, raw_caption]
+    if ru_summary is not _UNSET:
+        set_cols.append("ru_summary = ?")
+        params.append(ru_summary)
+    if extracted_urls is not _UNSET:
+        set_cols.append("extracted_urls = ?")
+        params.append(_dump_extracted_urls(extracted_urls))
+    params.append(note_id)
+    conn.execute(
+        f"UPDATE notes SET {', '.join(set_cols)} WHERE id = ?",
+        params,
+    )
     if commit:
         conn.commit()
 

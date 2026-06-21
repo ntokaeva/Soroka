@@ -196,7 +196,7 @@ def _extract_entity_urls(msg) -> list[str]:
         for ent in entities:
             url = getattr(ent, "url", None)
             if not url and ent.type == "url" and text is not None:
-                url = text[ent.offset:ent.offset + ent.length]
+                url = media_group._slice_utf16(text, ent.offset, ent.length)
             if url and url not in seen:
                 seen.add(url)
                 out.append(url)
@@ -250,6 +250,7 @@ async def _route_and_ingest(ctx, conn, owner, msg, *, is_edit: bool = False) -> 
             audio_bytes=bytes(audio), mime=voice.mime_type or "audio/ogg",
             caption=msg.caption, created_at=int(msg.date.timestamp()),
             is_edit=is_edit,
+            extracted_urls=entity_urls,
         )
 
     if kind in ("pdf", "docx", "xlsx", "text_file"):

@@ -57,6 +57,20 @@ def test_extracts_plain_url_entity_from_text():
     assert _extract_entity_urls(msg) == ["https://example.com/b"]
 
 
+def test_plain_url_entity_offsets_are_utf16_not_python_chars():
+    """Telegram reports entity offset/length in UTF-16 code units, not
+    Python characters. A non-BMP char (emoji) before a `type=url` entity
+    is two UTF-16 units but a single Python char, so naive
+    `text[offset:offset+length]` slicing drifts and yields a corrupted
+    URL. Pin the UTF-16-correct slice."""
+    url = "https://example.com/x"
+    text = f"🔥 {url}"  # 🔥 is one Python char but two UTF-16 code units
+    offset = len("🔥 ".encode("utf-16-le")) // 2  # UTF-16 code-unit offset
+    length = len(url.encode("utf-16-le")) // 2
+    msg = _msg(text=text, entities=[_entity("url", offset, length)])
+    assert _extract_entity_urls(msg) == [url]
+
+
 def test_extracts_from_caption_entities_on_media_post():
     """The forwarded-channel-post case from real life: photo + caption,
     URL hidden behind a Markdown embed in the caption (not the text)."""

@@ -60,6 +60,36 @@ async def test_ingest_text_edit_overwrites_content_and_reembeds(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_ingest_text_edit_overwrites_extracted_urls(tmp_path):
+    """An edit must refresh extracted_urls, not keep the stale list from
+    the original ingest. The edit path flows through update_note_content,
+    which must persist the new column rather than ignoring it."""
+    conn = open_db(str(tmp_path / "x.db"))
+    init_schema(conn)
+    create_or_get_owner(conn, telegram_id=1)
+    update_owner_field(conn, 1, "jina_api_key", "k")
+
+    fake_jina = AsyncMock()
+    fake_jina.embed = AsyncMock(return_value=[0.1] * 1024)
+
+    first = await ingest_text(
+        conn, jina=fake_jina, owner_id=1,
+        tg_chat_id=-100, tg_message_id=42,
+        text="original", caption=None, created_at=1000,
+        extracted_urls=["https://old.example"],
+    )
+    await ingest_text(
+        conn, jina=fake_jina, owner_id=1,
+        tg_chat_id=-100, tg_message_id=42,
+        text="edited", caption=None, created_at=1000,
+        is_edit=True,
+        extracted_urls=["https://new.example"],
+    )
+    n = get_note(conn, first)
+    assert n.extracted_urls == ["https://new.example"]
+
+
+@pytest.mark.asyncio
 async def test_ingest_rolls_back_when_jina_fails(tmp_path):
     """If Jina raises mid-ingest the note must NOT be left in the DB —
     otherwise BM25 would surface a row that dense search can't see, and
@@ -278,6 +308,33 @@ async def test_ingest_short_voice_is_not_thin(tmp_path):
     )
     n = get_note(conn, note_id)
     assert n.thin_content is False
+
+
+@pytest.mark.asyncio
+async def test_ingest_voice_stores_extracted_urls(tmp_path):
+    """A captioned voice note can carry a Markdown link embed too. The
+    voice path is one of the ingest paths entity-URL capture must cover,
+    so the column must round-trip instead of staying NULL."""
+    conn = open_db(str(tmp_path / "x.db"))
+    init_schema(conn)
+    create_or_get_owner(conn, telegram_id=1)
+    update_owner_field(conn, 1, "jina_api_key", "k")
+
+    fake_jina = AsyncMock()
+    fake_jina.embed = AsyncMock(return_value=[0.1] * 1024)
+    fake_dg = AsyncMock()
+    fake_dg.transcribe = AsyncMock(return_value="голосовая заметка")
+
+    from src.core.ingest import ingest_voice
+    note_id = await ingest_voice(
+        conn, deepgram=fake_dg, jina=fake_jina, owner_id=1,
+        tg_chat_id=-100, tg_message_id=7,
+        audio_bytes=b"x", mime="audio/ogg",
+        caption="see link", created_at=1000,
+        extracted_urls=["https://voice.example"],
+    )
+    n = get_note(conn, note_id)
+    assert n.extracted_urls == ["https://voice.example"]
 
 
 @pytest.mark.asyncio
